@@ -1,57 +1,63 @@
-name: Go
+# This workflow will build a golang project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: build phantomsocks
 
 on:
+  workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ main ]
+    branches: [ "main" ]
 
 jobs:
-  build-linux:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        goos: [windows,linux]
+        goarch: [amd64]
     runs-on: ubuntu-latest
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
     steps:
-    - uses: actions/checkout@v2
-
-    - name: Set up Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: 1.19
-
-    - name: Build
-      run: |
-        sudo apt update && sudo apt install -y libpcap-dev
-        go build -v ./...
-        go build -v -tags pcap ./...
-        go build -v -tags rawsocket ./...
-        
-  build-windows:
-    runs-on: windows-latest
-    steps:
-    - uses: actions/checkout@v2
-
-    - name: Set up Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: 1.19
-
-    - name: Build
-      run: |
-        go build -v ./...
-        go build -v -tags pcap ./...
-        go build -v -tags windivert ./...
-        
-  build-macos:
-    runs-on: macos-latest
-    steps:
-    - uses: actions/checkout@v2
-
-    - name: Set up Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: 1.19
-
-    - name: Build
-      run: |
-        go build -v ./...
-        go build -v -tags pcap ./...
-        
+      - uses: actions/checkout@v3
+      - name: Show workflow information 
+        run: |
+          export osarch=$GOOS-$GOARCH
+          echo "GOOS: $GOOS, GOARCH: $GOARCH, RELEASE_NAME: $osarch"
+          echo "osarch=$osarch" >> $GITHUB_ENV
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.20'
+          check-latest: true
+      - name: Get project dependencies
+        run: go mod download
+      - name: Build phantomsocks
+        run: |
+          sudo apt update && sudo apt install -y libpcap-dev
+          # go build -v -o phantomsocks-${{ env.osarch }}/ -trimpath -ldflags "-s -w -buildid=" ./...
+          # go build -v -o phantomsocks-${{ env.osarch }}/ -trimpath -ldflags "-s -w -buildid=" -tags pcap ./...
+      - name: Build phantomsocks for Linux
+        if: matrix.goos == 'linux'
+        run: |
+          go build -v -o phantomsocks-${{ env.osarch }}/ -trimpath -ldflags "-s -w -buildid=" -tags pcap ./...
+      - name: Build phantomsocks for Windows
+        if: matrix.goos == 'windows'
+        run: |
+          go build -v -o phantomsocks-${{ env.osarch }}/ -trimpath -ldflags "-s -w -buildid=" -tags windivert ./...
+      # - name: Build background phantomsocks on Windows 
+      #   if: matrix.goos == 'windows'
+      #   run: go build -v -o wphantomsocks-${{ env.osarch }}/ -trimpath -ldflags "-s -w -H windowsgui -buildid=" ./...
+      - name: Package
+        run: |
+          cp README.md LICENSE default.conf config.json phantomsocks-${{ env.osarch }}
+      - name: Upload files to Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: phantomsocks-${{ env.osarch }}
+          path: |
+            ./phantomsocks-${{ env.osarch }}/*
